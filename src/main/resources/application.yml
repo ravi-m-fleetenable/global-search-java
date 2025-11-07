@@ -1,0 +1,213 @@
+spring:
+  application:
+    name: global-search-api
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:global_search}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:20}
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      connection-test-query: SELECT 1
+      pool-name: HikariPool-GlobalSearch
+
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate # Flyway handles schema
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        use_sql_comments: true
+        jdbc:
+          lob:
+            non_contextual_creation: true
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+        query:
+          fail_on_pagination_over_collection_fetch: true
+          in_clause_parameter_padding: true
+        connection:
+          provider_disables_autocommit: true
+        generate_statistics: false # Enable in dev only
+    open-in-view: false # Best practice
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    validate-on-migrate: true
+    clean-disabled: true # Safety: prevent accidental schema wipe
+
+  cache:
+    type: ${CACHE_TYPE:simple} # Use 'redis' in production
+    cache-names: search,autocomplete,facets
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2000ms
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      indent-output: true
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
+
+# Server Configuration
+server:
+  port: ${SERVER_PORT:8080}
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+  error:
+    include-message: always
+    include-stacktrace: on_param
+
+# Management & Monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: when_authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+# API Documentation
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
+# Application-Specific Configuration
+app:
+  name: ${spring.application.name}
+  version: @project.version@
+
+  # JWT Configuration
+  jwt:
+    secret: ${JWT_SECRET:your-secret-key-change-this-in-production-min-256-bits}
+    expiration-ms: 86400000 # 24 hours
+    refresh-expiration-ms: 604800000 # 7 days
+
+  # Search Configuration
+  search:
+    similarity:
+      global: ${SEARCH_SIMILARITY_GLOBAL:0.3} # pg_trgm.similarity_threshold
+      word: ${SEARCH_SIMILARITY_WORD:0.6} # pg_trgm.word_similarity_threshold
+    autocomplete:
+      min-length: 2
+      max-results: 10
+    global-search:
+      max-results: 100
+      default-time-range-months: 6 # Search last 6 months by default
+    pagination:
+      default-size: 20
+      max-size: 100
+
+  # Security Configuration
+  security:
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:4200}
+      allowed-methods: GET,POST,PUT,DELETE,OPTIONS
+      allowed-headers: "*"
+      allow-credentials: true
+    rate-limit:
+      enabled: true
+      requests-per-minute: 60
+
+# Logging Configuration
+logging:
+  level:
+    root: INFO
+    com.fleetenable.globalsearch: DEBUG
+    org.springframework.web: INFO
+    org.springframework.security: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+    org.flywaydb: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/global-search.log
+    max-size: 10MB
+    max-history: 30
+
+---
+# Development Profile
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        generate_statistics: true
+
+  h2:
+    console:
+      enabled: false
+
+logging:
+  level:
+    com.fleetenable.globalsearch: DEBUG
+    org.hibernate: DEBUG
+
+app:
+  security:
+    rate-limit:
+      enabled: false
+
+---
+# Production Profile
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        generate_statistics: false
+
+logging:
+  level:
+    root: WARN
+    com.fleetenable.globalsearch: INFO
+    org.springframework: WARN
+    org.hibernate: WARN
+  file:
+    name: /var/log/global-search/application.log
